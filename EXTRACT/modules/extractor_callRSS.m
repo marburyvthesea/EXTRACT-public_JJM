@@ -245,6 +245,14 @@ if config.parallel_cpu || config.multi_gpu
         % Get current movie partition from full movie
         [M_small, fov_occupation] = get_current_partition(...
             M, npx, npy, npt, partition_overlap, idx_partition);
+
+        % check RAM usage 
+        if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
+            info_small = whos('M_small');
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.1f GB\n', ...
+                datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
+        end
+
         time_upload(idx_partition) = posixtime(datetime) - start_upload;
         
         % Sometimes partitions contain no signal. Terminate in that case
@@ -288,6 +296,11 @@ if config.parallel_cpu || config.multi_gpu
         dispfun(sprintf('\t \t \t Count: %d cells.\n', ...
             size(S_this, 2)), config.verbose == 2);
 
+        if mod(idx_partition,config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
+            fprintf('%s: Partition %d/%d | RSS after run_extract: %.1f GB\n', ...
+                datestr(now), idx_partition, num_partitions, getRSSGB());
+        end
+
         % Un-trim the pixels
         if config.use_sparse_arrays
             S_temp = sparse(h * w, size(S_this, 2));
@@ -296,6 +309,7 @@ if config.parallel_cpu || config.multi_gpu
         end
         S_temp(fov_occupation(:), :) = S_this;
         S_this = S_temp;
+
 
         % Update FOV-wide arrays, not possible for parallel cpu!
         %if isfield(summary_this, 'summary_image')
@@ -385,6 +399,13 @@ else
         dispfun(sprintf('\t \t \t Upload finished in %.1f minutes ... \n', time_upload(idx_partition)/60),config.verbose == 2);
         io_time = io_time + time_upload(idx_partition);
 
+        % check RAM usage 
+        if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
+            info_small = whos('M_small');
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.1f GB\n', ...
+                datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
+        end
+
         % Sometimes partitions contain no signal. Terminate in that case
         std_M = nanstd(M_small(:));
         if std_M < SIGNAL_LOWER_THRESHOLD
@@ -423,6 +444,14 @@ else
         [S_this, T_this, summary_this] = run_extract(M_small, config_this);
         dispfun(sprintf('\t \t \t Count: %d cells.\n', ...
             size(S_this, 2)), config.verbose ~= 0);
+
+
+        % check RAM usage 
+        if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
+            info_small = whos('M_small');
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.1f GB\n', ...
+                datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
+        end
 
         % Un-trim the pixels
         if config.use_sparse_arrays
@@ -556,3 +585,14 @@ dispfun(sprintf(...
         datestr(now)), config.verbose ~=0);
 
 end
+
+function rssGB = getRSSGB()
+    [~,out] = system("awk '/VmRSS/ {print $2}' /proc/self/status");
+    rssKB = str2double(strtrim(out));
+    rssGB = rssKB/1024/1024;
+end 
+
+
+
+
+

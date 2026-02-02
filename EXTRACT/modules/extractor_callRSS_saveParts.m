@@ -1,4 +1,4 @@
-function output = extractor_callRSS(M, config)
+function output = extractor_callRSS_saveParts(M, config)
 % Wrapper for EXTRACT for processing large movies
 
 %This warning is not required thanks to Hakan's implementation of the preprocessing module.
@@ -220,6 +220,15 @@ T = {};
 time_upload = zeros(1,num_partitions);
 time_run = zeros(1,num_partitions);
 
+saveParts = isfield(config,'save_partition_results') && config.save_partition_results;
+if saveParts
+    if ~isfield(config,'partition_save_dir') || isempty(config.partition_save_dir)
+        error('Set config.partition_save_dir when save_partition_results=true');
+    end
+    if ~exist(config.partition_save_dir,'dir'); mkdir(config.partition_save_dir); end
+    partFiles = strings(num_partitions,1);
+end
+
 if config.parallel_cpu || config.multi_gpu
     dispfun(sprintf('%s: Signal extraction will run on %d partitions with %d parallel workers... \n', ...
             datestr(now), num_partitions,num_workers), config.verbose ~= 0);
@@ -247,9 +256,9 @@ if config.parallel_cpu || config.multi_gpu
             M, npx, npy, npt, partition_overlap, idx_partition);
 
         % check RAM usage 
-        if mod(idx_partition,50)==0 || idx_partition==num_partitions || idx_partition==1
+        if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
             info_small = whos('M_small');
-            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.1f GB\n', ...
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.3f GB\n', ...
                 datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
         end
 
@@ -296,7 +305,7 @@ if config.parallel_cpu || config.multi_gpu
         dispfun(sprintf('\t \t \t Count: %d cells.\n', ...
             size(S_this, 2)), config.verbose == 2);
 
-        if mod(idx_partition,50)==0 || idx_partition==num_partitions || idx_partition==1
+        if mod(idx_partition,config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
             fprintf('%s: Partition %d/%d | RSS after run_extract: %.1f GB\n', ...
                 datestr(now), idx_partition, num_partitions, getRSSGB());
         end
@@ -310,7 +319,6 @@ if config.parallel_cpu || config.multi_gpu
         S_temp(fov_occupation(:), :) = S_this;
         S_this = S_temp;
 
-        clear M_small
 
         % Update FOV-wide arrays, not possible for parallel cpu!
         %if isfield(summary_this, 'summary_image')
@@ -400,6 +408,13 @@ else
         dispfun(sprintf('\t \t \t Upload finished in %.1f minutes ... \n', time_upload(idx_partition)/60),config.verbose == 2);
         io_time = io_time + time_upload(idx_partition);
 
+        % check RAM usage 
+        if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
+            info_small = whos('M_small');
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.3f GB\n', ...
+                datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
+        end
+
         % Sometimes partitions contain no signal. Terminate in that case
         std_M = nanstd(M_small(:));
         if std_M < SIGNAL_LOWER_THRESHOLD
@@ -439,6 +454,13 @@ else
         dispfun(sprintf('\t \t \t Count: %d cells.\n', ...
             size(S_this, 2)), config.verbose ~= 0);
 
+
+        % check RAM usage 
+        if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
+            fprintf('%s: Partition %d/%d | RSS after run_extract: %.1f GB\n', ...
+            datestr(now), idx_partition, num_partitions, getRSSGB());
+        end
+
         % Un-trim the pixels
         if config.use_sparse_arrays
             S_temp = sparse(h * w, size(S_this, 2));
@@ -458,13 +480,34 @@ else
             max_image(fov_occupation(:)) = max(M_small, [], 3);
         end
         summary_this.fov_occupation = fov_occupation;
-        summary{idx_partition} = summary_this;
-        if ~isempty(S_this)
-            S{idx_partition} = S_this;
-            T{idx_partition} = T_this';
+        
+        if saveParts
+            partPath = fullfile(config.partition_save_dir, sprintf("part_%05d.mat", idx_partition));
+            partFiles(idx_partition) = partPath;
+
+            % Save only what you need later. Use -v7.3 because S_this can be big.
+            % S_this is currently full-frame (h*w x nCellsPartition) and may be sparse.
+            Stmp = S_this;              %#ok<NASGU>
+            Ttmp = T_this';             %#ok<NASGU>
+            sumtmp = summary_this;      %#ok<NASGU>
+            fovtmp = fov_occupation;    %#ok<NASGU>
+
+            save(partPath, "Stmp","Ttmp","sumtmp","fovtmp","-v7.3");
+
+            % Free memory aggressively
+            clear Stmp Ttmp sumtmp fovtmp S_this T_this summary_this M_small
+
+        else
+            summary{idx_partition} = summary_this;
+            if ~isempty(S_this)
+                S{idx_partition} = S_this;
+                T{idx_partition} = T_this';
+            end 
         end
+        
         fov_occupation_total = fov_occupation_total + fov_occupation;
 
+        clear M_small
 
         time_run(idx_partition) = posixtime(datetime) - start_upload;
         if verbose_old == 3
@@ -478,10 +521,33 @@ else
     end
 end
 
-% Concatenate components from different partitions
-S = cell2mat(S(~cellfun(@isempty, S)));
-T = cell2mat(T(~cellfun(@isempty, T)));
-summary = [summary{~cellfun(@isempty, summary)}];
+% Concatenate components from different partitions saved in files
+if saveParts
+    % Load back and concatenate at the end (still can be big, but at least you
+    % avoided growing memory throughout the run).
+    S_cells = cell(num_partitions,1);
+    T_cells = cell(num_partitions,1);
+    summary = cell(num_partitions,1);
+
+    for k = 1:num_partitions
+        if partFiles(k) == ""; continue; end
+        D = load(partFiles(k), "Stmp","Ttmp","sumtmp");
+        if ~isempty(D.Stmp); S_cells{k} = D.Stmp; end
+        if ~isempty(D.Ttmp); T_cells{k} = D.Ttmp; end
+        summary{k} = D.sumtmp;
+        clear D
+    end
+
+    S = cell2mat(S_cells(~cellfun(@isempty,S_cells)).');
+    T = cell2mat(T_cells(~cellfun(@isempty,T_cells)).');
+    summary = [summary{~cellfun(@isempty, summary)}];
+
+    clear S_cells T_cells
+else
+    S = cell2mat(S(~cellfun(@isempty, S)));
+    T = cell2mat(T(~cellfun(@isempty, T)));
+    summary = [summary{~cellfun(@isempty, summary)}];
+end
 
 try
     [cellcheck] = combine_metrics(summary);
@@ -571,12 +637,6 @@ dispfun(sprintf(...
         datestr(now)), config.verbose ~=0);
 
 end
-
-function rssGB = getRSSGB()
-    [~,out] = system("awk '/VmRSS/ {print $2}' /proc/self/status");
-    rssKB = str2double(strtrim(out));
-    rssGB = rssKB/1024/1024;
-end 
 
 
 

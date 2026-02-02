@@ -249,7 +249,7 @@ if config.parallel_cpu || config.multi_gpu
         % check RAM usage 
         if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
             info_small = whos('M_small');
-            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.1f GB\n', ...
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.3f GB\n', ...
                 datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
         end
 
@@ -402,7 +402,7 @@ else
         % check RAM usage 
         if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
             info_small = whos('M_small');
-            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.1f GB\n', ...
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.3f GB\n', ...
                 datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
         end
 
@@ -448,9 +448,8 @@ else
 
         % check RAM usage 
         if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
-            info_small = whos('M_small');
-            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.1f GB\n', ...
-                datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
+            fprintf('%s: Partition %d/%d | RSS after run_extract: %.1f GB\n', ...
+            datestr(now), idx_partition, num_partitions, getRSSGB());
         end
 
         % Un-trim the pixels
@@ -585,12 +584,6 @@ dispfun(sprintf(...
         datestr(now)), config.verbose ~=0);
 
 end
-
-function rssGB = getRSSGB()
-    [~,out] = system("awk '/VmRSS/ {print $2}' /proc/self/status");
-    rssKB = str2double(strtrim(out));
-    rssGB = rssKB/1024/1024;
-end 
 
 
 

@@ -1,4 +1,4 @@
-function output = extractor(M, config)
+function output = extractor_MATcompatible(M, config)
 % Wrapper for EXTRACT for processing large movies
 
 %This warning is not required thanks to Hakan's implementation of the preprocessing module.
@@ -162,7 +162,7 @@ if num_workers > 1
     config.visualize_cellfinding = 0;
 end
 
-[h, w, ~] = get_movie_size(M);
+[h, w, ~] = get_movie_size_h5ormat(M);
 
 npt = config.num_frames;
 % Determine the movie partitions
@@ -243,7 +243,7 @@ if config.parallel_cpu || config.multi_gpu
 
         start_upload = posixtime(datetime);
         % Get current movie partition from full movie
-        [M_small, fov_occupation] = get_current_partition(...
+        [M_small, fov_occupation] = get_current_partition_h5ormat(...
             M, npx, npy, npt, partition_overlap, idx_partition);
         time_upload(idx_partition) = posixtime(datetime) - start_upload;
         
@@ -379,7 +379,7 @@ else
 
         start_upload = posixtime(datetime);
         % Get current movie partition from full movie
-        [M_small, fov_occupation] = get_current_partition(...
+        [M_small, fov_occupation] = get_current_partition_h5ormat(...
             M, npx, npy, npt, partition_overlap, idx_partition);
         time_upload(idx_partition) = posixtime(datetime) - start_upload;
         dispfun(sprintf('\t \t \t Upload finished in %.1f minutes ... \n', time_upload(idx_partition)/60),config.verbose == 2);

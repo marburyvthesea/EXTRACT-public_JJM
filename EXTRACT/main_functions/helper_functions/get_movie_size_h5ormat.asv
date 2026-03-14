@@ -1,0 +1,25 @@
+function [h, w, t] = get_movie_size_h5ormat(M)
+    if ischar(M) || iscell(M)
+        [~,~,ext] = fileparts(M{1});
+        if strcmpi(ext, '.mat');
+        
+
+        elseif strcmpi(ext, '.h5'); 
+        [path, dataset] = parse_movie_name(M);
+        movie_info = h5info(path, dataset);
+        movie_size = num2cell(movie_info.Dataspace.Size);
+        [h, w, t] = deal(movie_size{:});
+
+        else
+            disp('extension is');
+            disp(ext);
+            disp('currently only support h5 or mat files')
+        end 
+        [path, dataset] = parse_movie_name(M);
+        movie_info = h5info(path, dataset);
+        movie_size = num2cell(movie_info.Dataspace.Size);
+        [h, w, t] = deal(movie_size{:});
+    else
+        [h, w, t] = size(M);
+    end
+end

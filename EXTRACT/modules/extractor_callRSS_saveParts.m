@@ -162,7 +162,7 @@ if num_workers > 1
     config.visualize_cellfinding = 0;
 end
 
-[h, w, ~] = get_movie_size(M);
+[h, w, ~] = get_movie_size_h5ormat(M);
 
 npt = config.num_frames;
 % Determine the movie partitions
@@ -252,14 +252,19 @@ if config.parallel_cpu || config.multi_gpu
 
         start_upload = posixtime(datetime);
         % Get current movie partition from full movie
-        [M_small, fov_occupation] = get_current_partition(...
+        [M_small, fov_occupation] = get_current_partition_h5ormat(...
             M, npx, npy, npt, partition_overlap, idx_partition);
 
-        % check RAM usage 
+        M_small = single(M_small);
+        M_small = replace_nans_with_zeros(M_small);
+
+        msmallGB = numel(M_small) * 4 / 1024^3;
+        fprintf('%s: Partition %d/%d | M_small est: %.3f GB\n', datestr(now), idx_partition, num_partitions, msmallGB);
+
+        % check RAM usage (parfor-safe)
         if mod(idx_partition, config.callNum)==0 || idx_partition==num_partitions || idx_partition==1
-            info_small = whos('M_small');
-            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small: %.3f GB\n', ...
-                datestr(now), idx_partition, num_partitions, getRSSGB(), info_small.bytes/(1024^3));
+            fprintf('%s: Partition %d/%d | RSS after load: %.1f GB | M_small est: %.3f GB\n', ...
+            datestr(now), idx_partition, num_partitions, getRSSGB(), msmallGB);
         end
 
         time_upload(idx_partition) = posixtime(datetime) - start_upload;
@@ -402,7 +407,7 @@ else
 
         start_upload = posixtime(datetime);
         % Get current movie partition from full movie
-        [M_small, fov_occupation] = get_current_partition(...
+        [M_small, fov_occupation] = get_current_partition_h5ormat(...
             M, npx, npy, npt, partition_overlap, idx_partition);
         time_upload(idx_partition) = posixtime(datetime) - start_upload;
         dispfun(sprintf('\t \t \t Upload finished in %.1f minutes ... \n', time_upload(idx_partition)/60),config.verbose == 2);

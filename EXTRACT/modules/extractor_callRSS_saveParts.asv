@@ -404,7 +404,7 @@ if config.parallel_cpu || config.multi_gpu
                     summary_image(fov_occupation_temp(:)) = summary_temp.summary_image;
                     max_image(fov_occupation_temp(:)) = summary_temp.max_image;
                 end
-            end
+                end
         catch
             dispfun(sprintf('%s: Summary image estimation failed. Moving on without one... \n', ...
                     datestr(now)), config.verbose ~= 0);
